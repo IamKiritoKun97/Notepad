@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Notepad — Abbreviation Expander (Space-only)</title>
+<style>
+  :root{
+    --titlebar-height:30px;
+    --menu-height:24px;
+    --border-color:#cfcfcf;
+    --titlebar-bg:#f0f0f0;
+    --menu-bg:#ececec;
+    --editor-bg:#ffffff;
+    --editor-color:#000000;
+    --font-stack: "Consolas","Courier New",monospace;
+    --modal-width:720px;
+  }
+  html,body{height:100%;}
+  body{margin:0;background:#2b2b2b;display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui,Segoe UI,Roboto,Arial;}
+  .window{width:960px;height:700px;border:1px solid var(--border-color);background:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.35);display:flex;flex-direction:column;overflow:hidden;position:relative;}
+  .titlebar{height:var(--titlebar-height);background:var(--titlebar-bg);display:flex;align-items:center;padding:0 8px;border-bottom:1px solid rgba(0,0,0,0.06);}
+  .titlebar .icon{width:16px;height:16px;background:#999;margin-right:8px;border-radius:2px;}
+  .titlebar .title{flex:1;text-align:center;font-size:12px;color:#111;font-weight:600;user-select:none;}
+  .titlebar .controls{display:flex;gap:6px;}
+  .btn{width:34px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:2px;font-size:12px;cursor:pointer;user-select:none;}
+  .btn.close{background:#e81123;color:#fff;}
+  .menubar{height:var(--menu-height);background:var(--menu-bg);display:flex;align-items:center;padding:0 6px;border-bottom:1px solid rgba(0,0,0,0.06);font-size:12px;}
+  .menu{position:relative;margin-right:12px;padding:4px 6px;border-radius:2px;cursor:default;user-select:none;}
+  .menu-list{position:absolute;top:100%;left:0;background:#fff;border:1px solid var(--border-color);box-shadow:0 6px 18px rgba(0,0,0,0.12);display:none;min-width:160px;z-index:10;}
+  .menu.open .menu-list{display:block;}
+  .menu-list button{display:block;width:100%;padding:6px 10px;border:0;background:transparent;text-align:left;font-size:13px;cursor:pointer;}
+  .editor-wrap{flex:1;display:flex;flex-direction:column;background:var(--editor-bg);}
+  textarea#notepad{flex:1;width:100%;resize:none;border:0;padding:12px;font-family:var(--font-stack);font-size:14px;line-height:1.25;color:var(--editor-color);background:transparent;outline:none;caret-color:#000;box-sizing:border-box;white-space:pre-wrap;}
+  textarea::selection{background:#b5d5ff;color:#000;}
+  .statusbar{height:22px;background:#f3f3f3;border-top:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:space-between;padding:0 8px;font-size:12px;}
+  .modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid var(--border-color);padding:12px;display:none;z-index:80;box-shadow:0 10px 30px rgba(0,0,0,0.25);min-width:320px;max-width:92vw;max-height:86vh;overflow:auto;}
+  .modal.show{display:block;}
+  .modal .title{font-weight:700;margin-bottom:8px;}
+  .modal .controls{margin-top:10px;text-align:right;}
+  .notes-list{position:absolute;right:8px;top:40px;background:#fff;border:1px solid var(--border-color);padding:6px;max-height:220px;overflow:auto;display:none;z-index:20;min-width:220px;}
+  .notes-list button{display:block;width:100%;text-align:left;padding:6px;border:0;background:transparent;cursor:pointer;}
+  .pid-list{font-family:var(--font-stack);font-size:13px;border-top:1px solid #eee;padding-top:8px;margin-top:8px;}
+  .pid-group{margin-bottom:10px;}
+  .pid-item{display:flex;justify-content:space-between;padding:6px;border-radius:3px;cursor:pointer;}
+  .pid-item.duplicate{background:#fff3f3;color:#a00;}
+  .pid-item:hover{background:#f0f8ff;}
+  .pid-item .id{font-weight:600;}
+  .pid-controls{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;}
+  .abbr-list{margin-top:8px;border-top:1px solid #eee;padding-top:8px;}
+  .abbr-row{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;}
+  .abbr-row input[type="text"], .abbr-row textarea{font-family:var(--font-stack);font-size:13px;padding:6px;border:1px solid #ddd;border-radius:4px;}
+  .abbr-row textarea{width:100%;min-height:56px;resize:vertical;}
+  .abbr-actions{display:flex;gap:6px;align-items:center;}
+  .small{font-size:12px;padding:6px 8px;}
+  .hidden{display:none;}
+  @media (max-width:980px){ .window{width:94vw;height:86vh;} .modal{min-width:92vw;} }
+</style>
+</head>
+<body>
+  <div class="window" role="application" aria-label="Notepad">
+    <div class="titlebar" role="toolbar">
+      <div class="icon" aria-hidden="true"></div>
+      <div class="title" id="windowTitle">Untitled - Notepad</div>
+      <div class="controls" aria-hidden="true">
+        <div class="btn min" title="Minimize">—</div>
+        <div class="btn max" title="Maximize">▢</div>
+        <div class="btn close" title="Close">✕</div>
+      </div>
+    </div>
+
+    <nav class="menubar" role="menubar" aria-label="Notepad menu">
+      <div class="menu" tabindex="0" data-menu="file">File
+        <div class="menu-list" role="menu" aria-hidden="true">
+          <button role="menuitem" id="newBtn">New</button>
+          <button role="menuitem" id="openBtn">Open (.txt)</button>
+          <button role="menuitem" id="saveBtn">Save (.txt)</button>
+          <button role="menuitem" id="notesListToggle">Notes</button>
+          <button role="menuitem" id="viewAllPatientIDsBtn">View Patient IDs</button>
+        </div>
+      </div>
+      <div class="menu" tabindex="0" data-menu="edit">Edit
+        <div class="menu-list" role="menu" aria-hidden="true">
+          <button role="menuitem" id="undoBtn">Undo</button>
+          <button role="menuitem" id="redoBtn">Redo</button>
+          <button role="menuitem" id="findBtn">Find</button>
+        </div>
+      </div>
+      <div class="menu" tabindex="0">Format</div>
+      <div class="menu" tabindex="0">View</div>
+      <div class="menu" tabindex="0">Help</div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;padding-right:8px;">
+        <button id="manageAbbrBtn" class="small">Abbreviations</button>
+      </div>
+    </nav>
+
+    <div class="editor-wrap">
+      <textarea id="notepad" spellcheck="false" aria-label="Text editor" placeholder=""></textarea>
+      <div class="statusbar">
+        <div id="patientCount">Patient IDs (Active Note): 0 🧑‍⚕️</div>
+        <div id="wordChar">Ln 1, Col 1</div>
+      </div>
+    </div>
+  </div>
+
+  <input id="fileOpenInput" type="file" accept=".txt,text/plain" class="hidden" />
+  <input id="importJsonInput" type="file" accept=".json,application/json" class="hidden" />
+
+  <div id="notesList" class="notes-list" aria-hidden="true"></div>
+
+  <div id="greetingModal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="title" id="greetingTitle">Milestone</div>
+    <div id="greetingMessage">Congrats</div>
+    <div class="controls"><button id="okGreetingBtn">OK</button></div>
+  </div>
+
+  <div id="duplicateAlertModal" class="modal" role="alertdialog" aria-hidden="true">
+    <div class="title">Duplicate Patient ID</div>
+    <div id="duplicateAlertMessage"></div>
+    <div class="controls"><button id="okDuplicateAlertBtn">OK</button></div>
+  </div>
+
+  <div id="patientIDsModal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="title">All Patient IDs</div>
+    <div class="pid-controls">
+      <label><input type="checkbox" id="showOnlyDuplicates"> Show only duplicates</label>
+      <button id="copyPatientIDsBtn" class="small">Copy IDs (grouped)</button>
+      <button id="closePatientIDsBtn" class="small">Close</button>
+    </div>
+    <div id="patientIDsContent" class="pid-list" aria-live="polite"></div>
+  </div>
+
+  <div id="abbrModal" class="modal" role="dialog" aria-modal="true" aria-hidden="true" style="min-width:var(--modal-width);">
+    <div class="title">Abbreviations — Manage</div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <input id="newAbbrInput" placeholder="abbreviation (e.g., vm)" style="width:180px;padding:6px;border:1px solid #ddd;border-radius:4px;font-family:var(--font-stack);" />
+      <input id="newExpansionInput" placeholder="expansion (short) or paste long text below" style="flex:1;padding:6px;border:1px solid #ddd;border-radius:4px;font-family:var(--font-stack);" />
+      <button id="addAbbrBtn" class="small">Add</button>
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <button id="importAbbrBtn" class="small">Import .json</button>
+      <button id="exportAbbrBtn" class="small">Export .json</button>
+      <button id="resetDefaultAbbrBtn" class="small">Reset Defaults</button>
+      <div style="margin-left:auto;font-size:12px;color:#666;">Format: [{ "abbr":"x","expansion":"y" }, ...]</div>
+    </div>
+
+    <div id="abbrList" class="abbr-list" aria-live="polite"></div>
+
+    <div class="controls" style="margin-top:12px;">
+      <button id="closeAbbrModalBtn" class="small">Close</button>
+    </div>
+  </div>
+
+<script>
+/* Abbreviation expansion that triggers ONLY on space key.
+   - Typing "vm" then pressing space will expand to "Voicemail " (space preserved).
+   - Enter and Tab will NOT trigger expansion.
+   - Case-insensitive matching.
+   - Abbreviations managed in modal; import/export JSON supported.
+   - Other Notepad features (save/open, patient ID modal) preserved.
+*/
+
+/* Storage keys */
+const STORAGE_KEYS = {
+  NOTES: 'notepad_notes_v1',
+  ACTIVE_INDEX: 'notepad_active_index_v1',
+  MILESTONES: 'patient_milestones_v1',
+  KNOWN_DUPLICATES: 'known_duplicate_ids_v1',
+  ABBREVIATIONS: 'notepad_abbreviations_v1',
+  USERNAME: 'notepad_username_v1'
+};
+
+/* DOM refs */
+const notepad = document.getElementById('notepad');
+const patientCountEl = document.getElementById('patientCount');
+const notesListEl = document.getElementById('notesList');
+const fileOpenInput = document.getElementById('fileOpenInput');
+const importJsonInput = document.getElementById('importJsonInput');
+
+const patientIDsModal = document.getElementById('patientIDsModal');
+const patientIDsContent = document.getElementById('patientIDsContent');
+const showOnlyDuplicatesCheckbox = document.getElementById('showOnlyDuplicates');
+const copyPatientIDsBtn = document.getElementById('copyPatientIDsBtn');
+const closePatientIDsBtn = document.getElementById('closePatientIDsBtn');
+
+const abbrModal = document.getElementById('abbrModal');
+const abbrListEl = document.getElementById('abbrList');
+const newAbbrInput = document.getElementById('newAbbrInput');
+const newExpansionInput = document.getElementById('newExpansionInput');
+const addAbbrBtn = document.getElementById('addAbbrBtn');
+const importAbbrBtn = document.getElementById('importAbbrBtn');
+const exportAbbrBtn = document.getElementById('exportAbbrBtn');
+const resetDefaultAbbrBtn = document.getElementById('resetDefaultAbbrBtn');
+const manageAbbrBtn = document.getElementById('manageAbbrBtn');
+const closeAbbrModalBtn = document.getElementById('closeAbbrModalBtn');
+
+const greetingModal = document.getElementById('greetingModal');
+const greetingMessageEl = document.getElementById('greetingMessage');
+const greetingTitleEl = document.getElementById('greetingTitle');
+const okGreetingBtn = document.getElementById('okGreetingBtn');
+
+const duplicateAlertModal = document.getElementById('duplicateAlertModal');
+const duplicateAlertMessageEl = document.getElementById('duplicateAlertMessage');
+const okDuplicateAlertBtn = document.getElementById('okDuplicateAlertBtn');
+
+/* App state */
+let notes = [{ id: Date.now(), title: 'Untitled', content: '' }];
+let activeNoteIndex = 0;
+let currentUserName = localStorage.getItem(STORAGE_KEYS.USERNAME) || "User";
+let patientMilestonesReached = [];
+let knownDuplicateIDsForAlert = new Set();
+let milestoneGreetingIndex = -1;
+let abbreviations = {}; // map abbr -> expansion
+
+/* Default abbreviations */
+const DEFAULT_ABBREVIATIONS = {
+  "vm": "Voicemail",
+  "gtg": "got to go",
+  "brb": "be right back"
+};
+
+/* ---------- Persistence helpers ---------- */
+function safeParseJSON(raw, fallback){
+  try { return JSON.parse(raw); } catch(e){ return fallback; }
+}
+function saveNotesToStorage(){
+  try {
+    localStorage.setItem(STORAGE_KEYS.NOTES, JSON.stringify(notes));
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_INDEX, String(activeNoteIndex));
+  } catch(e) { console.error('saveNotesToStorage', e); }
+}
+function loadNotesFromStorage(){
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.NOTES);
+    const idxRaw = localStorage.getItem(STORAGE_KEYS.ACTIVE_INDEX);
+    if(raw){
+      const parsed = safeParseJSON(raw, null);
+      if(Array.isArray(parsed) && parsed.length > 0) notes = parsed;
+    }
+    const idx = parseInt(idxRaw, 10);
+    if(!Number.isNaN(idx) && idx >= 0 && idx < notes.length) activeNoteIndex = idx;
+    else activeNoteIndex = 0;
+  } catch(e){ console.error('loadNotesFromStorage', e); }
+}
+function saveMilestones(){ try { localStorage.setItem(STORAGE_KEYS.MILESTONES, JSON.stringify(patientMilestonesReached)); } catch(e){} }
+function loadMilestones(){ patientMilestonesReached = safeParseJSON(localStorage.getItem(STORAGE_KEYS.MILESTONES), []); if(!Array.isArray(patientMilestonesReached)) patientMilestonesReached = []; }
+function saveKnownDuplicates(){ try { localStorage.setItem(STORAGE_KEYS.KNOWN_DUPLICATES, JSON.stringify(Array.from(knownDuplicateIDsForAlert))); } catch(e){} }
+function loadKnownDuplicates(){ const raw = localStorage.getItem(STORAGE_KEYS.KNOWN_DUPLICATES); const arr = safeParseJSON(raw, []); if(Array.isArray(arr)) knownDuplicateIDsForAlert = new Set(arr); }
+
+function loadAbbreviations(){
+  const raw = localStorage.getItem(STORAGE_KEYS.ABBREVIATIONS);
+  if(!raw){
+    abbreviations = Object.assign({}, DEFAULT_ABBREVIATIONS);
+    saveAbbreviations();
+    return;
+  }
+  const parsed = safeParseJSON(raw, null);
+  if(parsed && typeof parsed === 'object') abbreviations = parsed;
+  else abbreviations = Object.assign({}, DEFAULT_ABBREVIATIONS);
+}
+function saveAbbreviations(){
+  try { localStorage.setItem(STORAGE_KEYS.ABBREVIATIONS, JSON.stringify(abbreviations)); } catch(e){ console.error('saveAbbreviations', e); }
+}
+
+/* ---------- Notes UI ---------- */
+function getActiveNote(){ return notes[activeNoteIndex]; }
+function renderNotesList(){
+  notesListEl.innerHTML = '';
+  notes.forEach((n, idx) => {
+    const btn = document.createElement('button');
+    btn.textContent = `${n.title || 'Untitled'} (${n.id})`;
+    btn.addEventListener('click', ()=> { setActiveNoteIndex(idx); notesListEl.style.display='none'; });
+    notesListEl.appendChild(btn);
+  });
+}
+function setActiveNoteIndex(i){
+  if(i<0 || i>=notes.length) return;
+  activeNoteIndex = i;
+  renderActiveNoteToEditor();
+  saveNotesToStorage();
+  renderNotesList();
+}
+function renderActiveNoteToEditor(){
+  const active = getActiveNote();
+  if(!active) return;
+  notepad.value = active.content || '';
+  document.getElementById('windowTitle').textContent = (active.title || 'Untitled') + ' - Notepad';
+  updateWordCharCountForActiveNote();
+  updatePatientCountAndCheckMilestonesForActiveNote();
+}
+
+/* ---------- Status ---------- */
+function updateWordCharCountForActiveNote(){
+  const txt = notepad.value;
+  const lines = txt.split(/\r?\n/);
+  const ln = lines.length;
+  const col = lines[lines.length-1].length + 1;
+  const wcEl = document.getElementById('wordChar');
+  if(wcEl) wcEl.textContent = `Ln ${ln}, Col ${col}`;
+  const active = getActiveNote(); if(active){ active.content = txt; saveNotesToStorage(); }
+}
+
+/* ---------- Patient ID extraction ---------- */
+function extractPatientIDsFromText(text){
+  const ids = [];
+  if(!text) return ids;
+  const regex = /\bPatient ID\s*(\d+)\b/ig;
+  for (const m of text.matchAll(regex)) {
+    if (m && m[1]) ids.push(m[1]);
+  }
+  return ids;
+}
+function extractPatientIDsGrouped(text){
+  const lines = (text || '').split(/\r?\n/);
+  const groups = { "StLukes": [], "Aerocare": [], "OHH": [] };
+  let cur = null;
+  const sr = /^(stl|stlukes)$/i, ar = /^(aerocare|ac|aero)$/i, or = /^(ohh)$/i;
+  for(const ln of lines){
+    const tr = ln.trim();
+    if(sr.test(tr)) cur = "StLukes";
+    else if(ar.test(tr)) cur = "Aerocare";
+    else if(or.test(tr)) cur = "OHH";
+    else {
+      const m = /\bPatient ID\s*(\d+)\b/i.exec(tr);
+      if(m && cur) groups[cur].push(m[1]);
+    }
+  }
+  return groups;
+}
+function updatePatientCountAndCheckMilestonesForActiveNote(){
+  const active = getActiveNote();
+  if(!active) return;
+  const ids = extractPatientIDsFromText(active.content || '');
+  const curCount = ids.length;
+  patientCountEl.innerHTML = `Patient IDs (Active Note): ${curCount} 🧑‍⚕️`;
+  if (active.lastPatientCountForMilestone === undefined) active.lastPatientCountForMilestone = 0;
+  if(curCount > active.lastPatientCountForMilestone){
+    let trigMs = -1;
+    const spMs = [10,20,30,40,50];
+    for(const m of spMs){ if(curCount>=m && !patientMilestonesReached.includes(m)){ trigMs = m; break; } }
+    if(curCount>50){
+      let ct = Math.floor(curCount/10)*10;
+      if(ct>50 && !patientMilestonesReached.includes(ct) && (trigMs===-1 || ct>trigMs)) trigMs = ct;
+    }
+    if(trigMs !== -1){
+      milestoneGreetingIndex = (milestoneGreetingIndex+1) % milestoneTitles.length;
+      const rgTitle = milestoneTitles[milestoneGreetingIndex % milestoneTitles.length];
+      greetingMessageEl.innerHTML = `Congratulations ${currentUserName}, you've logged {count} patient IDs in this note!`.replace("{count}",trigMs);
+      greetingTitleEl.textContent = rgTitle;
+      greetingModal.classList.add('show');
+      patientMilestonesReached.push(trigMs);
+      saveMilestones();
+    }
+  }
+  active.lastPatientCountForMilestone = curCount;
+  saveNotesToStorage();
+  checkForAndAlertNewDuplicates(active.content || '');
+}
+function checkForAndAlertNewDuplicates(curTxt){
+  const grps = extractPatientIDsGrouped(curTxt);
+  const newDups = [];
+  for(const loc of Object.keys(grps)){
+    const freqs = {};
+    grps[loc].forEach(id => freqs[id] = (freqs[id]||0)+1);
+    for(const id in freqs){
+      if(freqs[id] > 1 && !knownDuplicateIDsForAlert.has(id)){
+        newDups.push({ id, group: loc });
+        knownDuplicateIDsForAlert.add(id);
+      }
+    }
+  }
+  if(newDups.length > 0 && !duplicateAlertModal.classList.contains('show')){
+    const first = newDups[0];
+    duplicateAlertMessageEl.innerHTML = `ID "<strong>${first.id}</strong>" duplicated in current note (<strong>${first.group}</strong>). Review.`;
+    duplicateAlertModal.classList.add('show');
+    saveKnownDuplicates();
+  }
+}
+
+/* ---------- Aggregate & modal ---------- */
+function getAllPatientIDsAcrossNotes(){
+  const aggregate = { "StLukes": {}, "Aerocare": {}, "OHH": {} };
+  notes.forEach(n => {
+    const groups = extractPatientIDsGrouped(n.content || '');
+    for(const loc of Object.keys(groups)){
+      groups[loc].forEach(id => {
+        aggregate[loc][id] = (aggregate[loc][id] || 0) + 1;
+      });
+    }
+  });
+  return aggregate;
+}
+function renderPatientIDsModal(onlyDuplicates = false){
+  const agg = getAllPatientIDsAcrossNotes();
+  patientIDsContent.innerHTML = '';
+  const any = Object.keys(agg).some(g => Object.keys(agg[g]).length > 0);
+  if(!any){
+    patientIDsContent.innerHTML = '<div>No patient IDs found in any note.</div>';
+    return;
+  }
+  for(const loc of Object.keys(agg)){
+    const ids = Object.keys(agg[loc]).sort((a,b)=>Number(a)-Number(b));
+    if(ids.length === 0) continue;
+    const groupDiv = document.createElement('div');
+    groupDiv.className = 'pid-group';
+    const heading = document.createElement('div');
+    heading.style.fontWeight = '700';
+    heading.style.marginBottom = '6px';
+    heading.textContent = loc + ` (${ids.length})`;
+    groupDiv.appendChild(heading);
+    ids.forEach(id => {
+      const count = agg[loc][id];
+      if(onlyDuplicates && count < 2) return;
+      const item = document.createElement('div');
+      item.className = 'pid-item' + (count > 1 ? ' duplicate' : '');
+      item.dataset.id = id;
+      item.dataset.loc = loc;
+      const left = document.createElement('div');
+      left.className = 'id';
+      left.textContent = id;
+      const right = document.createElement('div');
+      right.textContent = count > 1 ? `×${count}` : '';
+      item.appendChild(left);
+      item.appendChild(right);
+      item.addEventListener('click', ()=> { findAndSelectIDInEditor(id); });
+      groupDiv.appendChild(item);
+    });
+    patientIDsContent.appendChild(groupDiv);
+  }
+}
+
+/* ---------- Find & select logic ---------- */
+function findAndSelectIDInEditor(id){
+  const pattern = new RegExp('\\bPatient ID\\s*' + id + '\\b', 'i');
+  function selectInCurrentEditor(matchIndex, matchLength){
+    notepad.focus();
+    notepad.selectionStart = matchIndex;
+    notepad.selectionEnd = matchIndex + matchLength;
+    const linesBefore = notepad.value.slice(0, matchIndex).split(/\r?\n/).length;
+    const approxLineHeight = 18;
+    notepad.scrollTop = Math.max(0, (linesBefore - 3) * approxLineHeight);
+  }
+  const active = getActiveNote();
+  if(active && pattern.test(active.content || '')){
+    const m = pattern.exec(active.content || '');
+    if(m){ selectInCurrentEditor(m.index, m[0].length); return; }
+  }
+  for(let i=0;i<notes.length;i++){
+    if(i === activeNoteIndex) continue;
+    const txt = notes[i].content || '';
+    if(pattern.test(txt)){
+      const m = pattern.exec(txt);
+      setActiveNoteIndex(i);
+      setTimeout(()=> { selectInCurrentEditor(m.index, m[0].length); }, 60);
+      return;
+    }
+  }
+  alert('Could not find that ID in any note.');
+}
+
+/* ---------- Abbreviation expansion (SPACE only) ---------- */
+/* Normalize abbr key */
+function normalizeAbbrKey(k){ return String(k || '').trim(); }
+
+/* Expand when user pressed space: replace token + space with expansion + space */
+function expandIfAbbreviationAtCaretOnSpace(textarea){
+  const pos = textarea.selectionStart;
+  if(pos === null || pos === undefined) return;
+  // caret should be after the space just typed (pos points after the space)
+  // ensure the character immediately before caret is a space
+  if(pos === 0) return;
+  const charBefore = textarea.value.charAt(pos - 1);
+  if(charBefore !== ' ') return; // only trigger on space
+  // find token immediately before that space
+  const before = textarea.value.slice(0, pos - 1); // exclude the space
+  const tokenMatch = before.match(/([A-Za-z0-9._\/-]+)$/);
+  if(!tokenMatch) return;
+  const token = tokenMatch[1];
+  const tokenStart = pos - 1 - token.length;
+  const key = token.toLowerCase();
+  // find matching abbreviation (case-insensitive)
+  for(const ab in abbreviations){
+    if(!Object.prototype.hasOwnProperty.call(abbreviations, ab)) continue;
+    if(ab.toLowerCase() === key){
+      const expansion = abbreviations[ab];
+      if(typeof expansion !== 'string') return;
+      // Replace token + space with expansion + space
+      const beforeText = textarea.value.slice(0, tokenStart);
+      const afterText = textarea.value.slice(pos); // keep the space that was typed as part of replacement
+      const newText = beforeText + expansion + ' ' + afterText;
+      const newCaret = beforeText.length + expansion.length + 1; // after expansion + space
+      textarea.value = newText;
+      textarea.selectionStart = textarea.selectionEnd = newCaret;
+      // update active note and UI
+      const active = getActiveNote();
+      if(active){ active.content = textarea.value; saveNotesToStorage(); updateWordCharCountForActiveNote(); updatePatientCountAndCheckMilestonesForActiveNote(); }
+      return;
+    }
+  }
+}
+
+/* Expand abbreviations inside pasted text (keeps behavior) */
+function expandAbbreviationsInText(text){
+  if(!text) return text;
+  return text.replace(/([A-Za-z0-9._\/-]+)/g, (m) => {
+    for(const ab in abbreviations){
+      if(!Object.prototype.hasOwnProperty.call(abbreviations, ab)) continue;
+      if(ab.toLowerCase() === m.toLowerCase()) return abbreviations[ab];
+    }
+    return m;
+  });
+}
+
+/* ---------- Abbreviation manager UI ---------- */
+function renderAbbreviationsList(){
+  abbrListEl.innerHTML = '';
+  const keys = Object.keys(abbreviations).sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:'base'}));
+  if(keys.length === 0){
+    abbrListEl.innerHTML = '<div style="color:#666;font-size:13px;">No abbreviations defined.</div>';
+    return;
+  }
+  keys.forEach(k => {
+    const exp = abbreviations[k];
+    const row = document.createElement('div');
+    row.className = 'abbr-row';
+    const left = document.createElement('div');
+    left.style.width = '160px';
+    const abInput = document.createElement('input');
+    abInput.type = 'text';
+    abInput.value = k;
+    abInput.style.width = '100%';
+    left.appendChild(abInput);
+    const mid = document.createElement('div');
+    mid.style.flex = '1';
+    const expTa = document.createElement('textarea');
+    expTa.value = exp;
+    mid.appendChild(expTa);
+    const actions = document.createElement('div');
+    actions.className = 'abbr-actions';
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = 'Save';
+    saveBtn.className = 'small';
+    const delBtn = document.createElement('button');
+    delBtn.textContent = 'Delete';
+    delBtn.className = 'small';
+    actions.appendChild(saveBtn);
+    actions.appendChild(delBtn);
+    row.appendChild(left);
+    row.appendChild(mid);
+    row.appendChild(actions);
+    abbrListEl.appendChild(row);
+
+    saveBtn.addEventListener('click', ()=>{
+      const newKey = normalizeAbbrKey(abInput.value);
+      const newExp = expTa.value || '';
+      if(!newKey){ alert('Abbreviation cannot be empty'); return; }
+      if(newKey !== k && abbreviations[newKey]){
+        if(!confirm(`Abbreviation "${newKey}" already exists. Overwrite?`)) return;
+      }
+      if(newKey !== k) delete abbreviations[k];
+      abbreviations[newKey] = newExp;
+      saveAbbreviations();
+      renderAbbreviationsList();
+    });
+
+    delBtn.addEventListener('click', ()=>{
+      if(confirm(`Delete abbreviation "${k}"?`)){
+        delete abbreviations[k];
+        saveAbbreviations();
+        renderAbbreviationsList();
+      }
+    });
+  });
+}
+
+/* Import/Export abbreviations JSON */
+function importAbbreviationsFromJsonFile(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try {
+      const parsed = JSON.parse(String(e.target.result || ''));
+      if(!Array.isArray(parsed)){ alert('Invalid format: expected JSON array'); return; }
+      let added = 0;
+      parsed.forEach(item => {
+        if(item && typeof item.abbr === 'string' && typeof item.expansion === 'string'){
+          abbreviations[normalizeAbbrKey(item.abbr)] = item.expansion;
+          added++;
+        }
+      });
+      saveAbbreviations();
+      renderAbbreviationsList();
+      alert(`Imported ${added} abbreviations`);
+    } catch(err){
+      alert('Failed to import JSON: ' + err.message);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+function exportAbbreviationsToJson(){
+  const arr = Object.keys(abbreviations).map(k => ({ abbr: k, expansion: abbreviations[k] }));
+  const json = JSON.stringify(arr, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'abbreviations.json';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=> { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function resetDefaultAbbreviations(){
+  if(!confirm('Reset abbreviations to defaults? This will overwrite current list.')) return;
+  abbreviations = Object.assign({}, DEFAULT_ABBREVIATIONS);
+  saveAbbreviations();
+  renderAbbreviationsList();
+  alert('Abbreviations reset to defaults.');
+}
+
+/* ---------- Save/Open .txt (Windows-friendly) ---------- */
+function sanitizeFileName(name){
+  return name.replace(/[\\\/:*?"<>|]/g, '_').trim() || 'Untitled';
+}
+function downloadCurrentNoteAsTxt(){
+  const active = getActiveNote();
+  if(!active) return;
+  active.content = notepad.value;
+  saveNotesToStorage();
+  const text = (active.content || '').replace(/\r?\n/g, '\r\n');
+  const bomPrefixed = '\uFEFF' + text;
+  const blob = new Blob([bomPrefixed], { type: 'text/plain;charset=utf-8' });
+  const filename = sanitizeFileName((active.title || 'Untitled')) + '.txt';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=> { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function openTxtFileFromDisk(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    let text = String(e.target.result || '');
+    text = text.replace(/\r\n/g, '\n');
+    if(text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    const active = getActiveNote();
+    active.content = text;
+    const name = file.name.replace(/\.[^/.]+$/, '');
+    active.title = name || active.title || 'Untitled';
+    renderActiveNoteToEditor();
+    saveNotesToStorage();
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+/* ---------- Copy grouped patient IDs (CRLF) ---------- */
+function buildGroupedPatientIDsText(onlyDuplicates = false){
+  const agg = getAllPatientIDsAcrossNotes();
+  const sections = [];
+  const order = ['StLukes','Aerocare','OHH'];
+  for(const loc of order){
+    const ids = Object.keys(agg[loc] || {}).sort((a,b)=>Number(a)-Number(b));
+    const filtered = ids.filter(id => { if(onlyDuplicates) return (agg[loc][id]||0) > 1; return true; });
+    if(filtered.length === 0) continue;
+    const lines = [loc];
+    filtered.forEach(id => lines.push(id));
+    sections.push(lines.join('\r\n'));
+  }
+  return sections.join('\r\n\r\n');
+}
+function copyGroupedPatientIDsToClipboard(onlyDuplicates = false){
+  const text = buildGroupedPatientIDsText(onlyDuplicates);
+  if(!text){ alert('No patient IDs to copy.'); return; }
+  navigator.clipboard.writeText(text).then(()=> { alert('Grouped patient IDs copied to clipboard.'); }).catch(()=> {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); alert('Grouped patient IDs copied to clipboard.'); } catch(e){ alert('Copy failed.'); }
+    ta.remove();
+  });
+}
+
+/* ---------- Paste handler (patient info + abbreviation expansion) ---------- */
+function handleNotepadPasteForPatientInfo(event) {
+  const activeNote = getActiveNote(); if (!activeNote) return;
+  const pastedText = (event.clipboardData || window.clipboardData).getData('text');
+  const patientInfoRegex = /^([A-Z\s,.\-]+)\s*\n\s*Patient ID\s*(\d+)\s*\nDOB\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*$/im;
+  const match = pastedText.match(patientInfoRegex);
+  if (match) {
+    event.preventDefault();
+    const name = match[1].trim();
+    const patientId = match[2].trim();
+    const dob = match[3].trim();
+    const formattedString = `${name}\nPatient ID ${patientId}\nDOB ${dob}`;
+    const cursorPos = notepad.selectionStart;
+    const before = notepad.value.slice(0, cursorPos);
+    const after = notepad.value.slice(notepad.selectionEnd);
+    notepad.value = before + formattedString + after;
+    const newPos = cursorPos + formattedString.length;
+    notepad.selectionStart = notepad.selectionEnd = newPos;
+    activeNote.content = notepad.value;
+    updateWordCharCountForActiveNote();
+    updatePatientCountAndCheckMilestonesForActiveNote();
+    saveNotesToStorage();
+    return;
+  }
+  // otherwise expand abbreviations in pasted text and insert
+  const expanded = expandAbbreviationsInText(pastedText);
+  if(expanded !== pastedText){
+    event.preventDefault();
+    const cursorPos = notepad.selectionStart;
+    const before = notepad.value.slice(0, cursorPos);
+    const after = notepad.value.slice(notepad.selectionEnd);
+    notepad.value = before + expanded + after;
+    const newPos = cursorPos + expanded.length;
+    notepad.selectionStart = notepad.selectionEnd = newPos;
+    const active = getActiveNote(); if(active){ active.content = notepad.value; saveNotesToStorage(); updateWordCharCountForActiveNote(); updatePatientCountAndCheckMilestonesForActiveNote(); }
+  }
+}
+
+/* ---------- Event wiring ---------- */
+notepad.addEventListener('input', () => {
+  updateWordCharCountForActiveNote();
+  updatePatientCountAndCheckMilestonesForActiveNote();
+  saveNotesToStorage();
+});
+
+/* KEYUP: trigger expansion ONLY when user pressed SPACE (not Enter or Tab) */
+notepad.addEventListener('keyup', (e) => {
+  // Only trigger on actual space key
+  if(e.key === ' ' || e.key === 'Spacebar'){
+    expandIfAbbreviationAtCaretOnSpace(notepad);
+  }
+});
+
+/* Expand on paste */
+notepad.addEventListener('paste', (e) => {
+  handleNotepadPasteForPatientInfo(e);
+  setTimeout(()=> saveNotesToStorage(), 50);
+});
+
+/* Modal buttons */
+okGreetingBtn.addEventListener('click', ()=> greetingModal.classList.remove('show'));
+okDuplicateAlertBtn.addEventListener('click', ()=> duplicateAlertModal.classList.remove('show'));
+
+/* Patient IDs modal controls */
+document.getElementById('viewAllPatientIDsBtn').addEventListener('click', ()=>{
+  showOnlyDuplicatesCheckbox.checked = false;
+  renderPatientIDsModal(false);
+  patientIDsModal.classList.add('show');
+});
+showOnlyDuplicatesCheckbox.addEventListener('change', ()=> renderPatientIDsModal(showOnlyDuplicatesCheckbox.checked));
+copyPatientIDsBtn.addEventListener('click', ()=> copyGroupedPatientIDsToClipboard(showOnlyDuplicatesCheckbox.checked));
+closePatientIDsBtn.addEventListener('click', ()=> patientIDsModal.classList.remove('show'));
+
+/* Abbreviation modal controls */
+manageAbbrBtn.addEventListener('click', ()=>{
+  renderAbbreviationsList();
+  abbrModal.classList.add('show');
+});
+closeAbbrModalBtn.addEventListener('click', ()=> abbrModal.classList.remove('show'));
+addAbbrBtn.addEventListener('click', ()=>{
+  const ab = normalizeAbbrKey(newAbbrInput.value);
+  const ex = newExpansionInput.value || '';
+  if(!ab){ alert('Please enter an abbreviation'); return; }
+  if(abbreviations[ab] && !confirm(`Abbreviation "${ab}" exists. Overwrite?`)) return;
+  abbreviations[ab] = ex;
+  saveAbbreviations();
+  newAbbrInput.value = '';
+  newExpansionInput.value = '';
+  renderAbbreviationsList();
+});
+
+/* Import/Export abbreviations */
+importAbbrBtn.addEventListener('click', ()=> { importJsonInput.value = ''; importJsonInput.click(); });
+importJsonInput.addEventListener('change', (e)=>{
+  const f = e.target.files && e.target.files[0];
+  if(f) importAbbreviationsFromJsonFile(f);
+});
+exportAbbrBtn.addEventListener('click', exportAbbreviationsToJson);
+resetDefaultAbbrBtn.addEventListener('click', resetDefaultAbbreviations);
+
+/* Notes list UI */
+function toggleNotesList(){ notesListEl.style.display = notesListEl.style.display === 'block' ? 'none' : 'block'; renderNotesList(); }
+document.getElementById('notesListToggle').addEventListener('click', toggleNotesList);
+
+/* Menu actions */
+document.getElementById('newBtn').addEventListener('click', ()=> {
+  const newNote = { id: Date.now(), title: 'Untitled', content: '' };
+  notes.push(newNote);
+  setActiveNoteIndex(notes.length - 1);
+  saveNotesToStorage();
+});
+document.getElementById('saveBtn').addEventListener('click', ()=> {
+  saveNotesToStorage();
+  downloadCurrentNoteAsTxt();
+});
+document.getElementById('openBtn').addEventListener('click', ()=> {
+  fileOpenInput.value = '';
+  fileOpenInput.click();
+});
+fileOpenInput.addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  if(f) openTxtFileFromDisk(f);
+});
+document.getElementById('undoBtn').addEventListener('click', ()=> document.execCommand('undo'));
+document.getElementById('redoBtn').addEventListener('click', ()=> document.execCommand('redo'));
+document.getElementById('findBtn').addEventListener('click', ()=> alert('Find placeholder'));
+
+/* Keyboard shortcuts */
+document.addEventListener('keydown', (e)=>{
+  if(e.ctrlKey && e.key.toLowerCase()==='s'){ e.preventDefault(); saveNotesToStorage(); downloadCurrentNoteAsTxt(); }
+  if(e.ctrlKey && e.key.toLowerCase()==='o'){ e.preventDefault(); fileOpenInput.value = ''; fileOpenInput.click(); }
+  if(e.ctrlKey && e.key.toLowerCase()==='n'){ e.preventDefault(); const newNote = { id: Date.now(), title: 'Untitled', content: '' }; notes.push(newNote); setActiveNoteIndex(notes.length-1); saveNotesToStorage(); }
+  if(e.ctrlKey && e.key.toLowerCase()==='f'){ e.preventDefault(); alert('Find placeholder'); }
+});
+
+/* Save on unload */
+window.addEventListener('beforeunload', ()=> {
+  saveNotesToStorage();
+  saveMilestones();
+  saveKnownDuplicates();
+  saveAbbreviations();
+});
+
+/* ---------- Initialization ---------- */
+(function init(){
+  loadNotesFromStorage();
+  loadMilestones();
+  loadKnownDuplicates();
+  loadAbbreviations();
+  if(!Array.isArray(notes) || notes.length === 0){ notes = [{ id: Date.now(), title: 'Untitled', content: '' }]; activeNoteIndex = 0; }
+  if(typeof activeNoteIndex !== 'number' || activeNoteIndex < 0 || activeNoteIndex >= notes.length) activeNoteIndex = 0;
+  renderNotesList();
+  renderActiveNoteToEditor();
+  // Expose debug helpers
+  window.__notepad_debug = {
+    getNotes: ()=>notes,
+    save: saveNotesToStorage,
+    load: loadNotesFromStorage,
+    getAbbreviations: ()=>abbreviations,
+    setAbbreviations: (obj)=>{ abbreviations = obj; saveAbbreviations(); renderAbbreviationsList(); }
+  };
+})();
+</script>
+</body>
+</html>
