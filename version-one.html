@@ -1,0 +1,1120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Notepad</title>
+<style>
+  :root{
+    --titlebar-height:40px;
+    --menu-height:32px;
+    --border-color:#e5e5e5;
+    --titlebar-bg:#f3f3f3; /* Windows 11 Titlebar color */
+    --menu-bg:#ffffff;
+    --editor-bg:#ffffff;
+    --editor-color:#1b1b1b;
+    --tab-active-bg:#ffffff;
+    --tab-inactive-bg:transparent;
+    --tab-hover-bg:#e9e9e9;
+    --font-stack: "Consolas", "Courier New", monospace;
+    --ui-font: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    --modal-width:720px;
+    --accent-color: #0078d4;
+  }
+  html,body{height:100%;}
+  body{margin:0;background:#202020;display:flex;align-items:center;justify-content:center;height:100vh;font-family:var(--ui-font);}
+  
+  /* Main Window - Mica Effect Simulation */
+  .window{
+    width:1000px;
+    height:750px;
+    border:1px solid #888;
+    background:var(--titlebar-bg);
+    border-radius:8px;
+    box-shadow:0 12px 32px rgba(0,0,0,0.4);
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    position:relative;
+  }
+
+  /* Titlebar & Tabs Area */
+  .titlebar{
+    height:var(--titlebar-height);
+    background:var(--titlebar-bg);
+    display:flex;
+    align-items:flex-end; /* Tabs sit at bottom */
+    padding:0 8px;
+    -webkit-app-region: drag;
+    gap: 8px;
+  }
+  
+  .icon{width:16px;height:16px;background:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23444"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>') no-repeat center; margin-bottom: 12px; margin-right: 8px;}
+
+  /* Modern Tabs */
+  .tab-container {
+    flex: 1;
+    display: flex;
+    height: 34px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 6px;
+    scrollbar-width: none; /* Hide scrollbar */
+  }
+  .tab-container::-webkit-scrollbar { display: none; }
+
+  .tab {
+    max-width: 200px;
+    min-width: 120px;
+    height: 100%;
+    background: var(--tab-inactive-bg);
+    border-radius: 6px 6px 0 0;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    font-size: 12px;
+    color: #444;
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    border: 1px solid transparent;
+    border-bottom: none;
+    transition: background 0.1s;
+  }
+  .tab:hover { background: var(--tab-hover-bg); }
+  .tab.active {
+    background: var(--tab-active-bg);
+    color: #000;
+    font-weight: 500;
+    box-shadow: 0 -1px 4px rgba(0,0,0,0.05);
+  }
+  .tab .tab-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; }
+  .tab .tab-close { 
+    width: 20px; height: 20px; 
+    border-radius: 4px; 
+    display: flex; align-items: center; justify-content: center; 
+    font-size: 14px; opacity: 0; 
+  }
+  .tab:hover .tab-close { opacity: 1; }
+  .tab .tab-close:hover { background: rgba(0,0,0,0.1); }
+
+  .add-tab-btn {
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; cursor: pointer;
+    border-radius: 4px;
+    color: #444;
+  }
+  .add-tab-btn:hover { background: rgba(0,0,0,0.05); }
+
+  /* Window Controls */
+  .window-controls{display:flex; margin-bottom: 8px;}
+  .btn{width:46px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:0;font-size:12px;cursor:pointer;user-select:none;color: #333; transition: background 0.1s;}
+  .btn:hover { background: #e5e5e5; }
+  .btn.close:hover{background:#e81123;color:#fff;}
+
+  /* Menu Bar */
+  .menubar{height:var(--menu-height);background:var(--menu-bg);display:flex;align-items:center;padding:0 6px;border-bottom:1px solid #f0f0f0;font-size:13px;}
+  .menu{position:relative;margin-right:4px;padding:4px 10px;border-radius:4px;cursor:pointer;user-select:none; color: #333;}
+  .menu:hover { background: #f0f0f0; }
+  .menu.open { background: #e0e0e0; }
+  
+  .menu-list{position:absolute;top:100%;left:0;background:#fff;border:1px solid #ddd;border-radius: 6px;box-shadow:0 4px 12px rgba(0,0,0,0.15);display:none;min-width:200px;z-index:100; padding: 4px 0;}
+  .menu.open .menu-list{display:block;}
+  .menu-list button{display:flex; justify-content: space-between; width:100%;padding:8px 12px;border:0;background:transparent;text-align:left;font-size:13px;cursor:pointer; color: #333;}
+  .menu-list button:hover{background:#f0f0f0;}
+  .menu-list button span.shortcut { color: #888; font-size: 11px; }
+
+  /* Editor Area */
+  .editor-wrap{flex:1;display:flex;flex-direction:column;background:var(--editor-bg);}
+  textarea#notepad{flex:1;width:100%;resize:none;border:0;padding:16px 24px;font-family:var(--font-stack);font-size:15px;line-height:1.5;color:var(--editor-color);background:transparent;outline:none;caret-color:#000;box-sizing:border-box;white-space:pre-wrap;}
+  textarea::selection{background:#0078d4;color:#fff;}
+  
+  /* Status Bar */
+  .statusbar{height:28px;background:#f9f9f9;border-top:1px solid #e5e5e5;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:12px; color: #555;}
+  
+  /* Modals */
+  .modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;border-radius: 8px; border:1px solid #ccc;padding:0;display:none;z-index:1000;box-shadow:0 20px 40px rgba(0,0,0,0.3);min-width:320px;max-width:92vw;max-height:86vh;overflow:hidden; animation: fadeIn 0.1s ease-out;}
+  @keyframes fadeIn { from { opacity: 0; transform: translate(-50%, -48%); } to { opacity: 1; transform: translate(-50%, -50%); } }
+  .modal.show{display:flex; flex-direction: column;}
+  .modal-header { padding: 16px 20px; background: #f9f9f9; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;}
+  .modal .title{font-weight:600; font-size: 15px;}
+  .modal-body { padding: 20px; overflow-y: auto; max-height: 60vh; }
+  .modal-footer { padding: 16px 20px; border-top: 1px solid #eee; text-align: right; background: #fff; }
+
+  /* Buttons */
+  button.small { padding: 4px 12px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-family: var(--ui-font); }
+  button.small:hover { background: #f5f5f5; border-color: #999; }
+  button.primary { background: var(--accent-color); color: #fff; border-color: var(--accent-color); }
+  button.primary:hover { background: #006cc1; }
+
+  .notes-list{position:absolute;right:8px;top:80px;background:#fff;border:1px solid var(--border-color);padding:6px;max-height:220px;overflow:auto;display:none;z-index:20;min-width:220px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);}
+  .notes-list button{display:block;width:100%;text-align:left;padding:8px;border:0;background:transparent;cursor:pointer;}
+  .notes-list button:hover{background:#f0f0f0;}
+
+  /* Specific Logic Styles */
+  .pid-group{margin-bottom:12px;}
+  .pid-item{display:flex;justify-content:space-between;padding:8px;border-radius:4px;cursor:pointer; border-bottom: 1px solid #f5f5f5;}
+  .pid-item.duplicate{background:#fff3f3;color:#d13438;}
+  .pid-item:hover{background:#f0f8ff;}
+  .pid-item .id{font-weight:600; font-family: var(--font-stack);}
+  
+  .abbr-row{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px; padding-bottom: 8px; border-bottom: 1px solid #f0f0f0;}
+  .abbr-row input, .abbr-row textarea { font-family:var(--font-stack); padding:8px; border:1px solid #ddd; border-radius:4px; font-size: 13px;}
+  .hidden{display:none;}
+  
+  @media (max-width:980px){ .window{width:100vw;height:100vh;border-radius:0;border:none;} .modal{min-width:92vw;} }
+</style>
+</head>
+<body>
+  <div class="window" role="application" aria-label="Notepad">
+    <!-- Modern Titlebar with Tabs -->
+    <div class="titlebar" role="toolbar">
+      <div class="icon" aria-hidden="true" title="Notepad"></div>
+      
+      <div class="tab-container" id="tabContainer">
+        <!-- Tabs generated via JS -->
+      </div>
+      
+      <div class="add-tab-btn" id="addTabBtn" title="New Tab (Ctrl+N)">+</div>
+
+      <div style="flex:1; -webkit-app-region: drag;"></div> <!-- Spacer for dragging -->
+
+      <div class="window-controls" aria-hidden="true">
+        <div class="btn min" id="minWinBtn" title="Minimize">─</div>
+        <div class="btn max" id="maxWinBtn" title="Toggle Fullscreen">▢</div>
+        <div class="btn close" id="closeWinBtn" title="Close Tab">✕</div>
+      </div>
+    </div>
+
+    <nav class="menubar" role="menubar" aria-label="Notepad menu">
+      <div class="menu" tabindex="0" data-menu="file">File
+        <div class="menu-list" role="menu" aria-hidden="true">
+          <button role="menuitem" id="newBtn">New Tab <span class="shortcut">Ctrl+N</span></button>
+          <button role="menuitem" id="openBtn">Open <span class="shortcut">Ctrl+O</span></button>
+          <button role="menuitem" id="saveBtn">Save As <span class="shortcut">Ctrl+S</span></button>
+          <div style="height:1px; background:#eee; margin:4px 0;"></div>
+          <button role="menuitem" id="notesListToggle">Switch Note List</button>
+          <button role="menuitem" id="viewAllPatientIDsBtn">View Patient IDs</button>
+        </div>
+      </div>
+      <div class="menu" tabindex="0" data-menu="edit">Edit
+        <div class="menu-list" role="menu" aria-hidden="true">
+          <button role="menuitem" id="undoBtn">Undo <span class="shortcut">Ctrl+Z</span></button>
+          <button role="menuitem" id="redoBtn">Redo <span class="shortcut">Ctrl+Y</span></button>
+          <button role="menuitem" id="findBtn">Find <span class="shortcut">Ctrl+F</span></button>
+        </div>
+      </div>
+      <div class="menu" tabindex="0">View</div>
+      <div class="menu" tabindex="0">Settings</div>
+      
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;padding-right:8px;">
+        <button id="manageAbbrBtn" class="small">Abbreviations</button>
+      </div>
+    </nav>
+
+    <div class="editor-wrap">
+      <textarea id="notepad" spellcheck="false" aria-label="Text editor" placeholder="Type here..."></textarea>
+      <div class="statusbar">
+        <div id="patientCount">Patient IDs (Active Note): 0 🧑‍⚕️</div>
+        <div style="display:flex; gap: 16px;">
+          <div id="wordChar">Ln 1, Col 1</div>
+          <div>UTF-8</div>
+          <div>Windows (CRLF)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden File Inputs -->
+  <input id="fileOpenInput" type="file" accept=".txt,text/plain" class="hidden" />
+  <input id="importJsonInput" type="file" accept=".json,application/json" class="hidden" />
+
+  <!-- Overlays -->
+  <div id="notesList" class="notes-list" aria-hidden="true"></div>
+
+  <!-- Greeting Modal -->
+  <div id="greetingModal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-header">
+      <div class="title" id="greetingTitle">Milestone</div>
+    </div>
+    <div class="modal-body">
+      <div id="greetingMessage">Congrats</div>
+    </div>
+    <div class="modal-footer">
+      <button id="okGreetingBtn" class="small primary">OK</button>
+    </div>
+  </div>
+
+  <!-- Duplicate Alert Modal -->
+  <div id="duplicateAlertModal" class="modal" role="alertdialog" aria-hidden="true">
+    <div class="modal-header">
+      <div class="title" style="color:#d13438;">Duplicate Patient ID</div>
+    </div>
+    <div class="modal-body">
+      <div id="duplicateAlertMessage"></div>
+    </div>
+    <div class="modal-footer">
+      <button id="okDuplicateAlertBtn" class="small primary">OK</button>
+    </div>
+  </div>
+
+  <!-- Patient IDs Modal -->
+  <div id="patientIDsModal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-header">
+      <div class="title">All Patient IDs</div>
+      <div style="font-size:12px; color:#666;">Grouped by logic</div>
+    </div>
+    <div class="modal-body">
+      <div class="pid-controls">
+        <label><input type="checkbox" id="showOnlyDuplicates"> Show only duplicates</label>
+      </div>
+      <div id="patientIDsContent" class="pid-list" aria-live="polite"></div>
+    </div>
+    <div class="modal-footer">
+      <button id="copyPatientIDsBtn" class="small">Copy IDs</button>
+      <button id="closePatientIDsBtn" class="small primary">Close</button>
+    </div>
+  </div>
+
+  <!-- Abbreviation Modal -->
+  <div id="abbrModal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-header">
+      <div class="title">Abbreviations Manager</div>
+    </div>
+    <div class="modal-body">
+      <div style="background:#f0f8ff; padding:10px; border-radius:4px; margin-bottom:12px; font-size:13px;">
+        Trigger expansion by typing abbreviation + <strong>SPACE</strong>.
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;">
+        <input id="newAbbrInput" placeholder="Abbreviation (e.g. vm)" style="width:140px;" />
+        <input id="newExpansionInput" placeholder="Expansion text" style="flex:1;" />
+        <button id="addAbbrBtn" class="small primary">Add</button>
+      </div>
+
+      <div style="display:flex;gap:8px; margin-bottom:8px;">
+        <button id="importAbbrBtn" class="small">Import JSON</button>
+        <button id="exportAbbrBtn" class="small">Export JSON</button>
+        <button id="resetDefaultAbbrBtn" class="small" style="margin-left:auto;">Reset Defaults</button>
+      </div>
+
+      <div id="abbrList" class="abbr-list" aria-live="polite" style="max-height: 300px; overflow-y:auto;"></div>
+    </div>
+    <div class="modal-footer">
+      <button id="closeAbbrModalBtn" class="small primary">Done</button>
+    </div>
+  </div>
+
+<script>
+/* FIXED NOTEPAD LOGIC 
+   - Preserves Space-only abbreviation expansion.
+   - Preserves Patient ID tracking/grouping logic.
+   - Adds Tabs support (Windows 11 style).
+   - Fixes bugs in original code (missing vars, menu logic).
+*/
+
+/* Storage keys */
+const STORAGE_KEYS = {
+  NOTES: 'notepad_notes_v1',
+  ACTIVE_INDEX: 'notepad_active_index_v1',
+  MILESTONES: 'patient_milestones_v1',
+  KNOWN_DUPLICATES: 'known_duplicate_ids_v1',
+  ABBREVIATIONS: 'notepad_abbreviations_v1',
+  USERNAME: 'notepad_username_v1'
+};
+
+/* DOM refs */
+const notepad = document.getElementById('notepad');
+const patientCountEl = document.getElementById('patientCount');
+const notesListEl = document.getElementById('notesList');
+const fileOpenInput = document.getElementById('fileOpenInput');
+const importJsonInput = document.getElementById('importJsonInput');
+
+// Tab Refs
+const tabContainer = document.getElementById('tabContainer');
+const addTabBtn = document.getElementById('addTabBtn');
+
+// Modal Refs
+const patientIDsModal = document.getElementById('patientIDsModal');
+const patientIDsContent = document.getElementById('patientIDsContent');
+const showOnlyDuplicatesCheckbox = document.getElementById('showOnlyDuplicates');
+const copyPatientIDsBtn = document.getElementById('copyPatientIDsBtn');
+const closePatientIDsBtn = document.getElementById('closePatientIDsBtn');
+
+const abbrModal = document.getElementById('abbrModal');
+const abbrListEl = document.getElementById('abbrList');
+const newAbbrInput = document.getElementById('newAbbrInput');
+const newExpansionInput = document.getElementById('newExpansionInput');
+const addAbbrBtn = document.getElementById('addAbbrBtn');
+const importAbbrBtn = document.getElementById('importAbbrBtn');
+const exportAbbrBtn = document.getElementById('exportAbbrBtn');
+const resetDefaultAbbrBtn = document.getElementById('resetDefaultAbbrBtn');
+const manageAbbrBtn = document.getElementById('manageAbbrBtn');
+const closeAbbrModalBtn = document.getElementById('closeAbbrModalBtn');
+
+const greetingModal = document.getElementById('greetingModal');
+const greetingMessageEl = document.getElementById('greetingMessage');
+const greetingTitleEl = document.getElementById('greetingTitle');
+const okGreetingBtn = document.getElementById('okGreetingBtn');
+
+const duplicateAlertModal = document.getElementById('duplicateAlertModal');
+const duplicateAlertMessageEl = document.getElementById('duplicateAlertMessage');
+const okDuplicateAlertBtn = document.getElementById('okDuplicateAlertBtn');
+
+// Window Control Refs
+const maxWinBtn = document.getElementById('maxWinBtn');
+const closeWinBtn = document.getElementById('closeWinBtn');
+
+/* App state */
+let notes = [{ id: Date.now(), title: 'Untitled', content: '' }];
+let activeNoteIndex = 0;
+let currentUserName = localStorage.getItem(STORAGE_KEYS.USERNAME) || "User";
+let patientMilestonesReached = [];
+let knownDuplicateIDsForAlert = new Set();
+let milestoneGreetingIndex = -1;
+let abbreviations = {}; // map abbr -> expansion
+
+// BUG FIX: Defined missing array from original code
+const milestoneTitles = ["Keep it up!", "Great Job!", "On Fire!", "Unstoppable!", "Master Logger"];
+
+/* Default abbreviations */
+const DEFAULT_ABBREVIATIONS = {
+  "vm": "Voicemail",
+  "gtg": "got to go",
+  "brb": "be right back"
+};
+
+/* ---------- Persistence helpers ---------- */
+function safeParseJSON(raw, fallback){
+  try { return JSON.parse(raw); } catch(e){ return fallback; }
+}
+function saveNotesToStorage(){
+  try {
+    localStorage.setItem(STORAGE_KEYS.NOTES, JSON.stringify(notes));
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_INDEX, String(activeNoteIndex));
+  } catch(e) { console.error('saveNotesToStorage', e); }
+}
+function loadNotesFromStorage(){
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.NOTES);
+    const idxRaw = localStorage.getItem(STORAGE_KEYS.ACTIVE_INDEX);
+    if(raw){
+      const parsed = safeParseJSON(raw, null);
+      if(Array.isArray(parsed) && parsed.length > 0) notes = parsed;
+    }
+    const idx = parseInt(idxRaw, 10);
+    if(!Number.isNaN(idx) && idx >= 0 && idx < notes.length) activeNoteIndex = idx;
+    else activeNoteIndex = 0;
+  } catch(e){ console.error('loadNotesFromStorage', e); }
+}
+function saveMilestones(){ try { localStorage.setItem(STORAGE_KEYS.MILESTONES, JSON.stringify(patientMilestonesReached)); } catch(e){} }
+function loadMilestones(){ patientMilestonesReached = safeParseJSON(localStorage.getItem(STORAGE_KEYS.MILESTONES), []); if(!Array.isArray(patientMilestonesReached)) patientMilestonesReached = []; }
+function saveKnownDuplicates(){ try { localStorage.setItem(STORAGE_KEYS.KNOWN_DUPLICATES, JSON.stringify(Array.from(knownDuplicateIDsForAlert))); } catch(e){} }
+function loadKnownDuplicates(){ const raw = localStorage.getItem(STORAGE_KEYS.KNOWN_DUPLICATES); const arr = safeParseJSON(raw, []); if(Array.isArray(arr)) knownDuplicateIDsForAlert = new Set(arr); }
+
+function loadAbbreviations(){
+  const raw = localStorage.getItem(STORAGE_KEYS.ABBREVIATIONS);
+  if(!raw){
+    abbreviations = Object.assign({}, DEFAULT_ABBREVIATIONS);
+    saveAbbreviations();
+    return;
+  }
+  const parsed = safeParseJSON(raw, null);
+  if(parsed && typeof parsed === 'object') abbreviations = parsed;
+  else abbreviations = Object.assign({}, DEFAULT_ABBREVIATIONS);
+}
+function saveAbbreviations(){
+  try { localStorage.setItem(STORAGE_KEYS.ABBREVIATIONS, JSON.stringify(abbreviations)); } catch(e){ console.error('saveAbbreviations', e); }
+}
+
+/* ---------- Notes UI & Tabs Logic ---------- */
+function getActiveNote(){ return notes[activeNoteIndex]; }
+
+function createNewNote() {
+    const newNote = { id: Date.now(), title: 'Untitled', content: '' };
+    notes.push(newNote);
+    setActiveNoteIndex(notes.length - 1);
+    saveNotesToStorage();
+}
+
+function closeNote(index, e) {
+    if(e) e.stopPropagation(); // prevent tab click
+    if (notes.length === 1) {
+        // Don't close last note, just clear it
+        notes[0].content = "";
+        notes[0].title = "Untitled";
+        renderActiveNoteToEditor();
+        renderTabs();
+        return;
+    }
+    
+    // Remove from array
+    notes.splice(index, 1);
+    
+    // Adjust active index
+    if (index === activeNoteIndex) {
+        // if we closed the active one, go to the one before it, or 0
+        activeNoteIndex = Math.max(0, index - 1);
+    } else if (index < activeNoteIndex) {
+        // if we closed one to the left, shift index down
+        activeNoteIndex--;
+    }
+    
+    saveNotesToStorage();
+    renderActiveNoteToEditor();
+    renderTabs();
+}
+
+function renderTabs() {
+    tabContainer.innerHTML = '';
+    notes.forEach((note, index) => {
+        const tab = document.createElement('div');
+        tab.className = `tab ${index === activeNoteIndex ? 'active' : ''}`;
+        tab.title = note.title;
+        
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'tab-title';
+        titleSpan.textContent = note.title || 'Untitled';
+        
+        const closeSpan = document.createElement('div');
+        closeSpan.className = 'tab-close';
+        closeSpan.innerHTML = '✕';
+        closeSpan.onclick = (e) => closeNote(index, e);
+
+        tab.onclick = () => setActiveNoteIndex(index);
+        
+        tab.appendChild(titleSpan);
+        tab.appendChild(closeSpan);
+        tabContainer.appendChild(tab);
+        
+        // Ensure active tab is visible
+        if(index === activeNoteIndex) {
+             setTimeout(() => tab.scrollIntoView({behavior: 'smooth', block: 'nearest'}), 10);
+        }
+    });
+}
+
+function setActiveNoteIndex(i){
+  if(i<0 || i>=notes.length) return;
+  activeNoteIndex = i;
+  renderActiveNoteToEditor();
+  renderTabs(); // Update active state visually
+  saveNotesToStorage();
+}
+
+function renderActiveNoteToEditor(){
+  const active = getActiveNote();
+  if(!active) return;
+  notepad.value = active.content || '';
+  // Removed direct DOM title update to favor tabs
+  updateWordCharCountForActiveNote();
+  updatePatientCountAndCheckMilestonesForActiveNote();
+}
+
+/* ---------- Status ---------- */
+function updateWordCharCountForActiveNote(){
+  const txt = notepad.value;
+  const lines = txt.split(/\r?\n/);
+  // Simple caret position estimation logic for "Ln, Col"
+  // Note: getting exact line/col of caret in textarea is complex, using text length for now as generic update
+  // or sticking to static count if caret logic isn't fully implemented in original code.
+  // We will assume bottom of file for the display to avoid complexity, or implement basic:
+  
+  const textBeforeCaret = txt.substring(0, notepad.selectionStart);
+  const currentLine = textBeforeCaret.split("\n").length;
+  const currentLineIndex = textBeforeCaret.lastIndexOf("\n");
+  const currentCol = notepad.selectionStart - currentLineIndex;
+
+  const wcEl = document.getElementById('wordChar');
+  if(wcEl) wcEl.textContent = `Ln ${currentLine}, Col ${currentCol}`;
+  
+  const active = getActiveNote(); 
+  if(active){ active.content = txt; saveNotesToStorage(); }
+}
+
+/* ---------- Patient ID extraction (PRESERVED LOGIC) ---------- */
+function extractPatientIDsFromText(text){
+  const ids = [];
+  if(!text) return ids;
+  const regex = /\bPatient ID\s*(\d+)\b/ig;
+  for (const m of text.matchAll(regex)) {
+    if (m && m[1]) ids.push(m[1]);
+  }
+  return ids;
+}
+function extractPatientIDsGrouped(text){
+  const lines = (text || '').split(/\r?\n/);
+  const groups = { "StLukes": [], "Aerocare": [], "OHH": [] };
+  let cur = null;
+  const sr = /^(stl|stlukes)$/i, ar = /^(aerocare|ac|aero)$/i, or = /^(ohh)$/i;
+  for(const ln of lines){
+    const tr = ln.trim();
+    if(sr.test(tr)) cur = "StLukes";
+    else if(ar.test(tr)) cur = "Aerocare";
+    else if(or.test(tr)) cur = "OHH";
+    else {
+      const m = /\bPatient ID\s*(\d+)\b/i.exec(tr);
+      if(m && cur) groups[cur].push(m[1]);
+    }
+  }
+  return groups;
+}
+function updatePatientCountAndCheckMilestonesForActiveNote(){
+  const active = getActiveNote();
+  if(!active) return;
+  const ids = extractPatientIDsFromText(active.content || '');
+  const curCount = ids.length;
+  patientCountEl.innerHTML = `Patient IDs (Active Note): ${curCount} 🧑‍⚕️`;
+  if (active.lastPatientCountForMilestone === undefined) active.lastPatientCountForMilestone = 0;
+  
+  // Bug fix: Ensure milestoneTitles exists (Added at top)
+  if(curCount > active.lastPatientCountForMilestone){
+    let trigMs = -1;
+    const spMs = [10,20,30,40,50];
+    for(const m of spMs){ if(curCount>=m && !patientMilestonesReached.includes(m)){ trigMs = m; break; } }
+    if(curCount>50){
+      let ct = Math.floor(curCount/10)*10;
+      if(ct>50 && !patientMilestonesReached.includes(ct) && (trigMs===-1 || ct>trigMs)) trigMs = ct;
+    }
+    if(trigMs !== -1){
+      milestoneGreetingIndex = (milestoneGreetingIndex+1) % milestoneTitles.length;
+      const rgTitle = milestoneTitles[milestoneGreetingIndex % milestoneTitles.length];
+      greetingMessageEl.innerHTML = `Congratulations ${currentUserName}, you've logged <strong>${trigMs}</strong> patient IDs in this note!`;
+      greetingTitleEl.textContent = rgTitle;
+      greetingModal.classList.add('show');
+      patientMilestonesReached.push(trigMs);
+      saveMilestones();
+    }
+  }
+  active.lastPatientCountForMilestone = curCount;
+  saveNotesToStorage();
+  checkForAndAlertNewDuplicates(active.content || '');
+}
+function checkForAndAlertNewDuplicates(curTxt){
+  const grps = extractPatientIDsGrouped(curTxt);
+  const newDups = [];
+  for(const loc of Object.keys(grps)){
+    const freqs = {};
+    grps[loc].forEach(id => freqs[id] = (freqs[id]||0)+1);
+    for(const id in freqs){
+      if(freqs[id] > 1 && !knownDuplicateIDsForAlert.has(id)){
+        newDups.push({ id, group: loc });
+        knownDuplicateIDsForAlert.add(id);
+      }
+    }
+  }
+  if(newDups.length > 0 && !duplicateAlertModal.classList.contains('show')){
+    const first = newDups[0];
+    duplicateAlertMessageEl.innerHTML = `ID "<strong>${first.id}</strong>" duplicated in current note (<strong>${first.group}</strong>). Review.`;
+    duplicateAlertModal.classList.add('show');
+    saveKnownDuplicates();
+  }
+}
+
+/* ---------- Aggregate & modal ---------- */
+function getAllPatientIDsAcrossNotes(){
+  const aggregate = { "StLukes": {}, "Aerocare": {}, "OHH": {} };
+  notes.forEach(n => {
+    const groups = extractPatientIDsGrouped(n.content || '');
+    for(const loc of Object.keys(groups)){
+      groups[loc].forEach(id => {
+        aggregate[loc][id] = (aggregate[loc][id] || 0) + 1;
+      });
+    }
+  });
+  return aggregate;
+}
+function renderPatientIDsModal(onlyDuplicates = false){
+  const agg = getAllPatientIDsAcrossNotes();
+  patientIDsContent.innerHTML = '';
+  const any = Object.keys(agg).some(g => Object.keys(agg[g]).length > 0);
+  if(!any){
+    patientIDsContent.innerHTML = '<div style="padding:10px; color:#666;">No patient IDs found in any note.</div>';
+    return;
+  }
+  for(const loc of Object.keys(agg)){
+    const ids = Object.keys(agg[loc]).sort((a,b)=>Number(a)-Number(b));
+    if(ids.length === 0) continue;
+    const groupDiv = document.createElement('div');
+    groupDiv.className = 'pid-group';
+    const heading = document.createElement('div');
+    heading.style.fontWeight = '700';
+    heading.style.marginBottom = '6px';
+    heading.style.color = '#0078d4';
+    heading.textContent = loc + ` (${ids.length})`;
+    groupDiv.appendChild(heading);
+    ids.forEach(id => {
+      const count = agg[loc][id];
+      if(onlyDuplicates && count < 2) return;
+      const item = document.createElement('div');
+      item.className = 'pid-item' + (count > 1 ? ' duplicate' : '');
+      item.dataset.id = id;
+      item.dataset.loc = loc;
+      const left = document.createElement('div');
+      left.className = 'id';
+      left.textContent = id;
+      const right = document.createElement('div');
+      right.textContent = count > 1 ? `×${count}` : '';
+      item.appendChild(left);
+      item.appendChild(right);
+      item.addEventListener('click', ()=> { findAndSelectIDInEditor(id); patientIDsModal.classList.remove('show'); });
+      groupDiv.appendChild(item);
+    });
+    patientIDsContent.appendChild(groupDiv);
+  }
+}
+
+/* ---------- Find & select logic ---------- */
+function findAndSelectIDInEditor(id){
+  const pattern = new RegExp('\\bPatient ID\\s*' + id + '\\b', 'i');
+  function selectInCurrentEditor(matchIndex, matchLength){
+    notepad.focus();
+    notepad.selectionStart = matchIndex;
+    notepad.selectionEnd = matchIndex + matchLength;
+    const linesBefore = notepad.value.slice(0, matchIndex).split(/\r?\n/).length;
+    const approxLineHeight = 22; // Adjusted for font size
+    notepad.scrollTop = Math.max(0, (linesBefore - 3) * approxLineHeight);
+  }
+  const active = getActiveNote();
+  if(active && pattern.test(active.content || '')){
+    const m = pattern.exec(active.content || '');
+    if(m){ selectInCurrentEditor(m.index, m[0].length); return; }
+  }
+  for(let i=0;i<notes.length;i++){
+    if(i === activeNoteIndex) continue;
+    const txt = notes[i].content || '';
+    if(pattern.test(txt)){
+      const m = pattern.exec(txt);
+      setActiveNoteIndex(i);
+      setTimeout(()=> { selectInCurrentEditor(m.index, m[0].length); }, 60);
+      return;
+    }
+  }
+  alert('Could not find that ID in any note.');
+}
+
+/* ---------- Abbreviation expansion (SPACE only) ---------- */
+function normalizeAbbrKey(k){ return String(k || '').trim(); }
+
+/* Expand when user pressed space: replace token + space with expansion + space */
+function expandIfAbbreviationAtCaretOnSpace(textarea){
+  const pos = textarea.selectionStart;
+  if(pos === null || pos === undefined) return;
+  // caret should be after the space just typed (pos points after the space)
+  // ensure the character immediately before caret is a space
+  if(pos === 0) return;
+  const charBefore = textarea.value.charAt(pos - 1);
+  if(charBefore !== ' ') return; // only trigger on space
+  // find token immediately before that space
+  const before = textarea.value.slice(0, pos - 1); // exclude the space
+  const tokenMatch = before.match(/([A-Za-z0-9._\/-]+)$/);
+  if(!tokenMatch) return;
+  const token = tokenMatch[1];
+  const tokenStart = pos - 1 - token.length;
+  const key = token.toLowerCase();
+  // find matching abbreviation (case-insensitive)
+  for(const ab in abbreviations){
+    if(!Object.prototype.hasOwnProperty.call(abbreviations, ab)) continue;
+    if(ab.toLowerCase() === key){
+      const expansion = abbreviations[ab];
+      if(typeof expansion !== 'string') return;
+      // Replace token + space with expansion + space
+      const beforeText = textarea.value.slice(0, tokenStart);
+      const afterText = textarea.value.slice(pos); // keep the space that was typed as part of replacement
+      const newText = beforeText + expansion + ' ' + afterText;
+      const newCaret = beforeText.length + expansion.length + 1; // after expansion + space
+      textarea.value = newText;
+      textarea.selectionStart = textarea.selectionEnd = newCaret;
+      // update active note and UI
+      const active = getActiveNote();
+      if(active){ active.content = textarea.value; saveNotesToStorage(); updateWordCharCountForActiveNote(); updatePatientCountAndCheckMilestonesForActiveNote(); }
+      return;
+    }
+  }
+}
+
+function expandAbbreviationsInText(text){
+  if(!text) return text;
+  return text.replace(/([A-Za-z0-9._\/-]+)/g, (m) => {
+    for(const ab in abbreviations){
+      if(!Object.prototype.hasOwnProperty.call(abbreviations, ab)) continue;
+      if(ab.toLowerCase() === m.toLowerCase()) return abbreviations[ab];
+    }
+    return m;
+  });
+}
+
+/* ---------- Abbreviation manager UI ---------- */
+function renderAbbreviationsList(){
+  abbrListEl.innerHTML = '';
+  const keys = Object.keys(abbreviations).sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:'base'}));
+  if(keys.length === 0){
+    abbrListEl.innerHTML = '<div style="color:#666;font-size:13px;">No abbreviations defined.</div>';
+    return;
+  }
+  keys.forEach(k => {
+    const exp = abbreviations[k];
+    const row = document.createElement('div');
+    row.className = 'abbr-row';
+    const left = document.createElement('div');
+    left.style.width = '160px';
+    const abInput = document.createElement('input');
+    abInput.type = 'text';
+    abInput.value = k;
+    abInput.style.width = '100%';
+    left.appendChild(abInput);
+    const mid = document.createElement('div');
+    mid.style.flex = '1';
+    const expTa = document.createElement('textarea');
+    expTa.value = exp;
+    mid.appendChild(expTa);
+    const actions = document.createElement('div');
+    actions.className = 'abbr-actions';
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = 'Save';
+    saveBtn.className = 'small';
+    const delBtn = document.createElement('button');
+    delBtn.textContent = 'Delete';
+    delBtn.className = 'small';
+    actions.appendChild(saveBtn);
+    actions.appendChild(delBtn);
+    row.appendChild(left);
+    row.appendChild(mid);
+    row.appendChild(actions);
+    abbrListEl.appendChild(row);
+
+    saveBtn.addEventListener('click', ()=>{
+      const newKey = normalizeAbbrKey(abInput.value);
+      const newExp = expTa.value || '';
+      if(!newKey){ alert('Abbreviation cannot be empty'); return; }
+      if(newKey !== k && abbreviations[newKey]){
+        if(!confirm(`Abbreviation "${newKey}" already exists. Overwrite?`)) return;
+      }
+      if(newKey !== k) delete abbreviations[k];
+      abbreviations[newKey] = newExp;
+      saveAbbreviations();
+      renderAbbreviationsList();
+    });
+
+    delBtn.addEventListener('click', ()=>{
+      if(confirm(`Delete abbreviation "${k}"?`)){
+        delete abbreviations[k];
+        saveAbbreviations();
+        renderAbbreviationsList();
+      }
+    });
+  });
+}
+
+/* Import/Export abbreviations JSON */
+function importAbbreviationsFromJsonFile(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try {
+      const parsed = JSON.parse(String(e.target.result || ''));
+      if(!Array.isArray(parsed)){ alert('Invalid format: expected JSON array'); return; }
+      let added = 0;
+      parsed.forEach(item => {
+        if(item && typeof item.abbr === 'string' && typeof item.expansion === 'string'){
+          abbreviations[normalizeAbbrKey(item.abbr)] = item.expansion;
+          added++;
+        }
+      });
+      saveAbbreviations();
+      renderAbbreviationsList();
+      alert(`Imported ${added} abbreviations`);
+    } catch(err){
+      alert('Failed to import JSON: ' + err.message);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+function exportAbbreviationsToJson(){
+  const arr = Object.keys(abbreviations).map(k => ({ abbr: k, expansion: abbreviations[k] }));
+  const json = JSON.stringify(arr, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'abbreviations.json';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=> { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function resetDefaultAbbreviations(){
+  if(!confirm('Reset abbreviations to defaults? This will overwrite current list.')) return;
+  abbreviations = Object.assign({}, DEFAULT_ABBREVIATIONS);
+  saveAbbreviations();
+  renderAbbreviationsList();
+  alert('Abbreviations reset to defaults.');
+}
+
+/* ---------- Save/Open .txt ---------- */
+function sanitizeFileName(name){
+  return name.replace(/[\\\/:*?"<>|]/g, '_').trim() || 'Untitled';
+}
+function downloadCurrentNoteAsTxt(){
+  const active = getActiveNote();
+  if(!active) return;
+  active.content = notepad.value;
+  saveNotesToStorage();
+  const text = (active.content || '').replace(/\r?\n/g, '\r\n');
+  const bomPrefixed = '\uFEFF' + text;
+  const blob = new Blob([bomPrefixed], { type: 'text/plain;charset=utf-8' });
+  const filename = sanitizeFileName((active.title || 'Untitled')) + '.txt';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=> { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function openTxtFileFromDisk(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    let text = String(e.target.result || '');
+    text = text.replace(/\r\n/g, '\n');
+    if(text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    
+    // Create new tab for opened file
+    const newNote = { 
+        id: Date.now(), 
+        title: file.name.replace(/\.[^/.]+$/, ''), 
+        content: text 
+    };
+    notes.push(newNote);
+    setActiveNoteIndex(notes.length - 1);
+    saveNotesToStorage();
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+/* ---------- Copy grouped patient IDs ---------- */
+function buildGroupedPatientIDsText(onlyDuplicates = false){
+  const agg = getAllPatientIDsAcrossNotes();
+  const sections = [];
+  const order = ['StLukes','Aerocare','OHH'];
+  for(const loc of order){
+    const ids = Object.keys(agg[loc] || {}).sort((a,b)=>Number(a)-Number(b));
+    const filtered = ids.filter(id => { if(onlyDuplicates) return (agg[loc][id]||0) > 1; return true; });
+    if(filtered.length === 0) continue;
+    const lines = [loc];
+    filtered.forEach(id => lines.push(id));
+    sections.push(lines.join('\r\n'));
+  }
+  return sections.join('\r\n\r\n');
+}
+function copyGroupedPatientIDsToClipboard(onlyDuplicates = false){
+  const text = buildGroupedPatientIDsText(onlyDuplicates);
+  if(!text){ alert('No patient IDs to copy.'); return; }
+  navigator.clipboard.writeText(text).then(()=> { alert('Grouped patient IDs copied to clipboard.'); }).catch(()=> {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); alert('Grouped patient IDs copied to clipboard.'); } catch(e){ alert('Copy failed.'); }
+    ta.remove();
+  });
+}
+
+/* ---------- Paste handler ---------- */
+function handleNotepadPasteForPatientInfo(event) {
+  const activeNote = getActiveNote(); if (!activeNote) return;
+  const pastedText = (event.clipboardData || window.clipboardData).getData('text');
+  const patientInfoRegex = /^([A-Z\s,.\-]+)\s*\n\s*Patient ID\s*(\d+)\s*\nDOB\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*$/im;
+  const match = pastedText.match(patientInfoRegex);
+  if (match) {
+    event.preventDefault();
+    const name = match[1].trim();
+    const patientId = match[2].trim();
+    const dob = match[3].trim();
+    const formattedString = `${name}\nPatient ID ${patientId}\nDOB ${dob}`;
+    const cursorPos = notepad.selectionStart;
+    const before = notepad.value.slice(0, cursorPos);
+    const after = notepad.value.slice(notepad.selectionEnd);
+    notepad.value = before + formattedString + after;
+    const newPos = cursorPos + formattedString.length;
+    notepad.selectionStart = notepad.selectionEnd = newPos;
+    activeNote.content = notepad.value;
+    updateWordCharCountForActiveNote();
+    updatePatientCountAndCheckMilestonesForActiveNote();
+    saveNotesToStorage();
+    return;
+  }
+  // otherwise expand abbreviations in pasted text and insert
+  const expanded = expandAbbreviationsInText(pastedText);
+  if(expanded !== pastedText){
+    event.preventDefault();
+    const cursorPos = notepad.selectionStart;
+    const before = notepad.value.slice(0, cursorPos);
+    const after = notepad.value.slice(notepad.selectionEnd);
+    notepad.value = before + expanded + after;
+    const newPos = cursorPos + expanded.length;
+    notepad.selectionStart = notepad.selectionEnd = newPos;
+    const active = getActiveNote(); if(active){ active.content = notepad.value; saveNotesToStorage(); updateWordCharCountForActiveNote(); updatePatientCountAndCheckMilestonesForActiveNote(); }
+  }
+}
+
+/* ---------- Event wiring ---------- */
+// General Input
+notepad.addEventListener('input', () => {
+  updateWordCharCountForActiveNote();
+  updatePatientCountAndCheckMilestonesForActiveNote();
+  saveNotesToStorage();
+});
+notepad.addEventListener('keyup', (e) => {
+    updateWordCharCountForActiveNote();
+    if(e.key === ' ' || e.key === 'Spacebar'){
+        expandIfAbbreviationAtCaretOnSpace(notepad);
+    }
+});
+notepad.addEventListener('click', updateWordCharCountForActiveNote); // Update col/ln on click
+notepad.addEventListener('paste', (e) => {
+  handleNotepadPasteForPatientInfo(e);
+  setTimeout(()=> saveNotesToStorage(), 50);
+});
+
+// Modal Close Buttons
+okGreetingBtn.addEventListener('click', ()=> greetingModal.classList.remove('show'));
+okDuplicateAlertBtn.addEventListener('click', ()=> duplicateAlertModal.classList.remove('show'));
+
+// Patient IDs Logic
+document.getElementById('viewAllPatientIDsBtn').addEventListener('click', ()=>{
+  showOnlyDuplicatesCheckbox.checked = false;
+  renderPatientIDsModal(false);
+  patientIDsModal.classList.add('show');
+});
+showOnlyDuplicatesCheckbox.addEventListener('change', ()=> renderPatientIDsModal(showOnlyDuplicatesCheckbox.checked));
+copyPatientIDsBtn.addEventListener('click', ()=> copyGroupedPatientIDsToClipboard(showOnlyDuplicatesCheckbox.checked));
+closePatientIDsBtn.addEventListener('click', ()=> patientIDsModal.classList.remove('show'));
+
+// Abbreviation Logic
+manageAbbrBtn.addEventListener('click', ()=>{
+  renderAbbreviationsList();
+  abbrModal.classList.add('show');
+});
+closeAbbrModalBtn.addEventListener('click', ()=> abbrModal.classList.remove('show'));
+addAbbrBtn.addEventListener('click', ()=>{
+  const ab = normalizeAbbrKey(newAbbrInput.value);
+  const ex = newExpansionInput.value || '';
+  if(!ab){ alert('Please enter an abbreviation'); return; }
+  if(abbreviations[ab] && !confirm(`Abbreviation "${ab}" exists. Overwrite?`)) return;
+  abbreviations[ab] = ex;
+  saveAbbreviations();
+  newAbbrInput.value = '';
+  newExpansionInput.value = '';
+  renderAbbreviationsList();
+});
+importAbbrBtn.addEventListener('click', ()=> { importJsonInput.value = ''; importJsonInput.click(); });
+importJsonInput.addEventListener('change', (e)=>{
+  const f = e.target.files && e.target.files[0];
+  if(f) importAbbreviationsFromJsonFile(f);
+});
+exportAbbrBtn.addEventListener('click', exportAbbreviationsToJson);
+resetDefaultAbbrBtn.addEventListener('click', resetDefaultAbbreviations);
+
+// Notes List Fallback
+function toggleNotesList(){ 
+    notesListEl.innerHTML = '';
+    notes.forEach((n, idx) => {
+        const btn = document.createElement('button');
+        btn.textContent = `${n.title || 'Untitled'} (${n.id})`;
+        btn.addEventListener('click', ()=> { setActiveNoteIndex(idx); notesListEl.style.display='none'; });
+        notesListEl.appendChild(btn);
+    });
+    notesListEl.style.display = notesListEl.style.display === 'block' ? 'none' : 'block'; 
+}
+document.getElementById('notesListToggle').addEventListener('click', toggleNotesList);
+
+// New Tab Button
+addTabBtn.addEventListener('click', createNewNote);
+
+/* Menu Logic (FIXED) */
+document.querySelectorAll('.menu').forEach(menu => {
+    menu.addEventListener('click', (e) => {
+        // Close other menus first
+        document.querySelectorAll('.menu').forEach(m => {
+            if (m !== menu) m.classList.remove('open');
+        });
+        menu.classList.toggle('open');
+        e.stopPropagation();
+    });
+});
+
+// Close menus when clicking outside
+window.addEventListener('click', () => {
+    document.querySelectorAll('.menu').forEach(m => m.classList.remove('open'));
+    notesListEl.style.display = 'none';
+});
+
+// Menu Action wiring
+document.getElementById('newBtn').addEventListener('click', createNewNote);
+document.getElementById('saveBtn').addEventListener('click', ()=> {
+  saveNotesToStorage();
+  downloadCurrentNoteAsTxt();
+});
+document.getElementById('openBtn').addEventListener('click', ()=> {
+  fileOpenInput.value = '';
+  fileOpenInput.click();
+});
+fileOpenInput.addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  if(f) openTxtFileFromDisk(f);
+});
+document.getElementById('undoBtn').addEventListener('click', ()=> document.execCommand('undo'));
+document.getElementById('redoBtn').addEventListener('click', ()=> document.execCommand('redo'));
+document.getElementById('findBtn').addEventListener('click', ()=> alert('Find Feature is a placeholder in this web demo, but Ctrl+F usually works natively in browser!'));
+
+// Window Controls Logic
+maxWinBtn.addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(e => console.log(e));
+    } else {
+        document.exitFullscreen();
+    }
+});
+closeWinBtn.addEventListener('click', () => closeNote(activeNoteIndex));
+
+/* Keyboard shortcuts */
+document.addEventListener('keydown', (e)=>{
+  if(e.ctrlKey && e.key.toLowerCase()==='s'){ e.preventDefault(); saveNotesToStorage(); downloadCurrentNoteAsTxt(); }
+  if(e.ctrlKey && e.key.toLowerCase()==='o'){ e.preventDefault(); fileOpenInput.value = ''; fileOpenInput.click(); }
+  if(e.ctrlKey && e.key.toLowerCase()==='n'){ e.preventDefault(); createNewNote(); }
+  // Ctrl+F is left to browser default in this context, or custom modal can be built.
+});
+
+/* Save on unload */
+window.addEventListener('beforeunload', ()=> {
+  saveNotesToStorage();
+  saveMilestones();
+  saveKnownDuplicates();
+  saveAbbreviations();
+});
+
+/* ---------- Initialization ---------- */
+(function init(){
+  loadNotesFromStorage();
+  loadMilestones();
+  loadKnownDuplicates();
+  loadAbbreviations();
+  if(!Array.isArray(notes) || notes.length === 0){ notes = [{ id: Date.now(), title: 'Untitled', content: '' }]; activeNoteIndex = 0; }
+  if(typeof activeNoteIndex !== 'number' || activeNoteIndex < 0 || activeNoteIndex >= notes.length) activeNoteIndex = 0;
+  
+  renderTabs();
+  renderActiveNoteToEditor();
+  
+  // Expose debug helpers
+  window.__notepad_debug = {
+    getNotes: ()=>notes,
+    save: saveNotesToStorage,
+    load: loadNotesFromStorage,
+    getAbbreviations: ()=>abbreviations,
+    setAbbreviations: (obj)=>{ abbreviations = obj; saveAbbreviations(); renderAbbreviationsList(); }
+  };
+})();
+</script>
+</body>
+</html>
+
